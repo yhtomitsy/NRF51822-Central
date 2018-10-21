@@ -52,6 +52,8 @@
 static ble_nus_c_t              m_ble_nus_c;                    /**< Instance of NUS service. Must be passed to all NUS_C API calls. */
 static ble_db_discovery_t       m_ble_db_discovery;             /**< Instance of database discovery module. Must be passed to all db_discovert API calls */
 
+char str[24] = ""; 
+
 /**
  * @brief Connection parameters requested for connection.
  */
@@ -198,10 +200,13 @@ static void ble_nus_c_evt_handler(ble_nus_c_t * p_ble_nus_c, const ble_nus_c_evt
         case BLE_NUS_C_EVT_NUS_RX_EVT:
             for (uint32_t i = 0; i < p_ble_nus_evt->data_len; i++)
             {
-                //while(app_uart_put( p_ble_nus_evt->p_data[i]) != NRF_SUCCESS);
-								SEGGER_RTT_printf(0, "%c", (char)p_ble_nus_evt->p_data[i]);
+                while(app_uart_put( p_ble_nus_evt->p_data[i]) != NRF_SUCCESS);
+								if((char)p_ble_nus_evt->p_data[i] == ';') printf("\r\n");
+								//str[i] = (char)p_ble_nus_evt->p_data[i];
+								//printf("%s\r\n",str);
+								//SEGGER_RTT_printf(0, "%c", (char)p_ble_nus_evt->p_data[i]);
             }
-						SEGGER_RTT_printf(0, "\r\n");
+						//SEGGER_RTT_printf(0, "\r\n");
             break;
         
         case BLE_NUS_C_EVT_DISCONNECTED:
@@ -480,7 +485,7 @@ static void uart_init(void)
         .tx_pin_no    = TX_PIN_NUMBER,
         .rts_pin_no   = RTS_PIN_NUMBER,
         .cts_pin_no   = CTS_PIN_NUMBER,
-        .flow_control = APP_UART_FLOW_CONTROL_ENABLED,
+        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
         .use_parity   = false,
         .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud115200
       };
@@ -548,15 +553,19 @@ int main(void)
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, NULL);
 
     uart_init();
+		//SEGGER_RTT_printf(0, "uart init\n");
     buttons_leds_init();
     db_discovery_init();
+		//SEGGER_RTT_printf(0, "discovery init\n");
     ble_stack_init();
+		//SEGGER_RTT_printf(0, "BLE stack init\n");
     nus_c_init();
-
+		//SEGGER_RTT_printf(0, "nus init\n");
     // Start scanning for peripherals and initiate connection
     // with devices that advertise NUS UUID.
     scan_start();
-    //printf("Scan started\r\n");
+		//SEGGER_RTT_printf(0, "scan init\n");
+    printf("Scan started\r\n");
 
     for (;;)
     {
