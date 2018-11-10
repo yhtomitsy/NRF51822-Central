@@ -59,3 +59,4 @@
 .\_build\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 .\_build\main.o: ..\..\..\..\..\..\components\ble\ble_services\ble_nus_c\ble_nus_c.h
 .\_build\main.o: C:\Keil_v5\ARM\PACK\NordicSemiconductor\RTT\SEGGER_RTT.h
+.\_build\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h

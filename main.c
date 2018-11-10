@@ -20,6 +20,7 @@
 #include "ble_advdata.h"
 #include "ble_nus_c.h"
 #include "SEGGER_RTT.h"
+#include "math.h"
 
 #define CENTRAL_LINK_COUNT      1                               /**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT   0                               /**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
@@ -49,10 +50,23 @@
 #define UUID32_SIZE             4                               /**< Size of 32 bit UUID */
 #define UUID128_SIZE            16                              /**< Size of 128 bit UUID */
 
+int16_t rotationVector_Q1 = 14;
+
 static ble_nus_c_t              m_ble_nus_c;                    /**< Instance of NUS service. Must be passed to all NUS_C API calls. */
 static ble_db_discovery_t       m_ble_db_discovery;             /**< Instance of database discovery module. Must be passed to all db_discovert API calls */
 
-char str[24] = ""; 
+//char str[24] = ""; 
+uint8_t str[60] = {0};    // holds the incoming bytes
+uint8_t ind = 0;          // holds number of incoming bytes
+static float quatI[7] = {0};
+static float quatJ[7] = {0};
+static float quatK[7] = {0};
+static float quatReal[7] = {0};
+uint8_t packetNumber = 0;
+
+double posX = 0;              // holds x position data
+double posY = 0;              // holds y position data
+double posZ = 0;              // holds z position data
 
 /**
  * @brief Connection parameters requested for connection.
@@ -110,9 +124,11 @@ static void scan_start(void)
     uint32_t err_code;
     
     err_code = sd_ble_gap_scan_start(&m_scan_params);
+		//SEGGER_RTT_printf(0, "Error: %d\n", err_code);
     APP_ERROR_CHECK(err_code);
     
     err_code = bsp_indication_set(BSP_INDICATE_SCANNING);
+		//SEGGER_RTT_printf(0, "Error: %d\n", err_code);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -173,6 +189,47 @@ void uart_event_handle(app_uart_evt_t * p_event)
     }
 }
 
+//Given a register value and a Q point, convert to float
+//See https://en.wikipedia.org/wiki/Q_(number_format)
+float qToFloat_(int16_t fixedPointValue, uint8_t qPoint)
+{
+		float qFloat = fixedPointValue;
+		qFloat *= pow(2, (qPoint * -1));
+		return (qFloat);
+}
+
+void parseData(uint8_t i)
+{  
+		if(i != 0 && i % 8 == 0)packetNumber++;
+		float qI = (((int16_t)str[3 + (packetNumber * 8)] << 8) | str[2 + (packetNumber * 8)]); 
+    float qJ = (((int16_t)str[5 + (packetNumber * 8)] << 8) | str[4 + (packetNumber * 8)]);
+    float qK = (((int16_t)str[7 + (packetNumber * 8)] << 8) | str[6 + (packetNumber * 8)]);
+    float qReal = (((int16_t)str[9 + (packetNumber * 8)] << 8) | str[8 + (packetNumber * 8)]); 
+		
+    quatReal[packetNumber] = qToFloat_(qReal, rotationVector_Q1); //pow(2, 14 * -1);//QP(14); 
+    quatI[packetNumber] = qToFloat_(qI, rotationVector_Q1);       //pow(2, 14 * -1);//QP(14); 
+    quatJ[packetNumber] = qToFloat_(qJ, rotationVector_Q1);       //pow(2, 14 * -1);//QP(14); 
+    quatK[packetNumber] = qToFloat_(qK, rotationVector_Q1);       //pow(2, 14 * -1);//QP(14);                  // apply Q point (quats are already unity vector)
+}
+
+float twosComplement(uint8_t a, uint8_t b, uint8_t c)
+{
+  // convert three bytes of 2s complement into 24 bit signed integer
+  int val = 0;
+  if (c & 0x80) val = 0xff;
+  val = (val << 8) | c;
+  val = (val << 8) | b;
+  val = (val << 8) | a;
+  return (float)val;
+}
+
+void getData()
+{		 
+    posX = twosComplement(str[50], str[51], str[52]) / 100.0;
+    posY = twosComplement(str[53], str[54], str[55]) / 100.0;
+    posZ = twosComplement(str[56], str[57], str[58]) / 100.0;
+}
+
 
 /**@brief Callback handling NUS Client events.
  *
@@ -198,15 +255,42 @@ static void ble_nus_c_evt_handler(ble_nus_c_t * p_ble_nus_c, const ble_nus_c_evt
             break;
         
         case BLE_NUS_C_EVT_NUS_RX_EVT:
-            for (uint32_t i = 0; i < p_ble_nus_evt->data_len; i++)
+            for (uint32_t i = 0; i < p_ble_nus_evt->data_len; i++)//p_ble_nus_evt->data_len
             {
                 while(app_uart_put( p_ble_nus_evt->p_data[i]) != NRF_SUCCESS);
-								if((char)p_ble_nus_evt->p_data[i] == ';') printf("\r\n");
-								//str[i] = (char)p_ble_nus_evt->p_data[i];
-								//printf("%s\r\n",str);
-								//SEGGER_RTT_printf(0, "%c", (char)p_ble_nus_evt->p_data[i]);
+								if(p_ble_nus_evt->p_data[i] == 0x7E)
+								{
+										i++;
+										if(p_ble_nus_evt->p_data[i] == 0x7F)
+										{
+												printf("\r\n");
+										}
+								}
+								//if(i)
+								//str[ind] = p_ble_nus_evt->p_data[i];
+								//if(ind == 59)
+								//{
+										/*if(str[0] == 0x7E && str[1] == 0x7F)
+										{
+												for(uint8_t j = 0; j < 48; j++)
+												{
+														parseData(j);
+												}
+												getData();
+										}*/
+										//ind = 0;
+										//SEGGER_RTT_printf(0, "r");
+										//SEGGER_RTT_printf(0, "%s\r\n", str);
+								//}
+								/*else 
+								{
+										ind++;
+								}
+								//printf("%s\r\n",str);*/
+								//SEGGER_RTT_printf(0, "%d", p_ble_nus_evt->p_data[i]);
             }
 						//SEGGER_RTT_printf(0, "\r\n");
+						//printf("\r\n");
             break;
         
         case BLE_NUS_C_EVT_DISCONNECTED:
@@ -496,7 +580,7 @@ static void uart_init(void)
                         uart_event_handle,
                         APP_IRQ_PRIORITY_LOW,
                         err_code);
-
+		//SEGGER_RTT_printf(0, "Error: %d\n", err_code);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -553,22 +637,24 @@ int main(void)
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, NULL);
 
     uart_init();
-		//SEGGER_RTT_printf(0, "uart init\n");
+		SEGGER_RTT_printf(0, "uart init\n");
     buttons_leds_init();
     db_discovery_init();
-		//SEGGER_RTT_printf(0, "discovery init\n");
+		SEGGER_RTT_printf(0, "discovery init\n");
     ble_stack_init();
-		//SEGGER_RTT_printf(0, "BLE stack init\n");
+		SEGGER_RTT_printf(0, "BLE stack init\n");
     nus_c_init();
-		//SEGGER_RTT_printf(0, "nus init\n");
+		SEGGER_RTT_printf(0, "nus init\n");
     // Start scanning for peripherals and initiate connection
     // with devices that advertise NUS UUID.
     scan_start();
-		//SEGGER_RTT_printf(0, "scan init\n");
+		SEGGER_RTT_printf(0, "scan init\n");
     printf("Scan started\r\n");
-
+		uint8_t buff[50] = {0};
     for (;;)
     {
+				//sprintf((char*)&buff[0], "%3.2f,%3.2f,%3.2f,%3.2f", quatReal[0], quatI[0], quatJ[0], quatK[0]);
+				//printf("%s\r\n", buff);
         power_manage();
     }
 }
